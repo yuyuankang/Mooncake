@@ -303,6 +303,10 @@ int RdmaEndPoint::submitPostSend(
     }
     __sync_fetch_and_add(&wr_depth_list_[qp_index], wr_count);
     __sync_fetch_and_add(cq_outstanding_, wr_count);
+    LOG(INFO) << "[new log] Posting " << wr_count << " RDMA WRs: src=" << (void*)slice_list[0]->source_addr
+              << " dst=" << (void*)slice_list[0]->rdma.dest_addr
+              << " len=" << slice_list[0]->length
+              << " op=" << (slice_list[0]->opcode == Transport::TransferRequest::READ ? "READ" : "WRITE");
     int rc = ibv_post_send(qp_list_[qp_index], wr_list.data(), &bad_wr);
     if (rc) {
         PLOG(ERROR) << "Failed to ibv_post_send";

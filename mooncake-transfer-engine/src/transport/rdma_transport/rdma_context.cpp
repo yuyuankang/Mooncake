@@ -258,8 +258,6 @@ int RdmaContext::registerMemoryRegionInternal(void *addr, size_t length,
                                       (uintptr_t)addr, dmabuf_fd, access);
     }
 #else
-    LOG(INFO) << "Using ibv_reg_mr to register memory region for address " << addr
-              << ", length " << length;
     mrMeta.addr = addr;
     mrMeta.mr = ibv_reg_mr(pd_, addr, length, access);
 #endif
