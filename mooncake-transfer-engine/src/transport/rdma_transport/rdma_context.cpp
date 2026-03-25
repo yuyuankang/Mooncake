@@ -258,6 +258,17 @@ int RdmaContext::registerMemoryRegionInternal(void *addr, size_t length,
                                       (uintptr_t)addr, dmabuf_fd, access);
     }
 #else
+    LOG(INFO) << "Using ibv_reg_mr to register memory region for address " << addr
+              << ", length " << length;
+    cudaPointerAttributes attrs;
+    cudaError_t cudaErr = cudaPointerGetAttributes(&attrs, addr);
+    if (cudaErr == cudaSuccess) {
+        LOG(INFO) << "  -> pointer type: " << attrs.type
+                  << " (0=unregistered, 1=host, 2=device, 3=managed)"
+                  << " deviceId=" << attrs.device;
+    } else {
+        LOG(INFO) << "  -> cudaPointerGetAttributes failed: " << cudaGetErrorString(cudaErr);
+    }
     mrMeta.addr = addr;
     mrMeta.mr = ibv_reg_mr(pd_, addr, length, access);
 #endif
