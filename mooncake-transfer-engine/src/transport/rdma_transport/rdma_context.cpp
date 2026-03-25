@@ -258,9 +258,6 @@ int RdmaContext::registerMemoryRegionInternal(void *addr, size_t length,
                                       (uintptr_t)addr, dmabuf_fd, access);
     }
 #else
-    // Diagnostic: confirm ibv_reg_mr path (WITH_NVIDIA_PEERMEM defined, not DMA-BUF)
-    LOG(INFO) << "[DIAG] ibv_reg_mr (WITH_NVIDIA_PEERMEM path) addr="
-              << addr << " size=" << length;
     mrMeta.addr = addr;
     mrMeta.mr = ibv_reg_mr(pd_, addr, length, access);
 #endif
