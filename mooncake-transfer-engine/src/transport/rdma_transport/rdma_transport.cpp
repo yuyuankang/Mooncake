@@ -87,6 +87,10 @@ RdmaTransport::~RdmaTransport() {
     metadata_->removeSegmentDesc(local_server_name_);
     batch_desc_set_.clear();
     context_list_.clear();
+    if (pii_mgmt_sock_ >= 0) {
+        disconnect_from_daemon(pii_mgmt_sock_);
+        pii_mgmt_sock_ = -1;
+    }
 }
 
 int RdmaTransport::install(std::string &local_server_name,
@@ -643,6 +647,10 @@ int RdmaTransport::onSetupRdmaConnections(const HandShakeDesc &peer_desc,
 }
 
 int RdmaTransport::initializeRdmaResources() {
+    pii_mgmt_sock_ = connect_to_daemon();
+    if (pii_mgmt_sock_ < 0)
+        LOG(WARNING) << "pii daemon not reachable, running without PII monitoring";
+
     auto hca_list = local_topology_->getHcaList();
     for (auto &device_name : hca_list) {
         auto context = std::make_shared<RdmaContext>(*this, device_name);

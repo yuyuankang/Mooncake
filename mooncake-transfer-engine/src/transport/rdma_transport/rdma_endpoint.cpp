@@ -265,7 +265,8 @@ bool RdmaEndPoint::hasOutstandingSlice() const {
 
 int RdmaEndPoint::submitPostSend(
     std::vector<Transport::Slice *> &slice_list,
-    std::vector<Transport::Slice *> &failed_slice_list) {
+    std::vector<Transport::Slice *> &failed_slice_list,
+    int thread_id) {
     RWSpinlock::WriteGuard guard(lock_);
     if (!active_) return 0;
     int qp_index = SimpleRandom::Get().next(qp_list_.size());
@@ -303,7 +304,10 @@ int RdmaEndPoint::submitPostSend(
     }
     __sync_fetch_and_add(&wr_depth_list_[qp_index], wr_count);
     __sync_fetch_and_add(cq_outstanding_, wr_count);
-    int rc = ibv_post_send(qp_list_[qp_index], wr_list.data(), &bad_wr);
+    pii_session_rt *pii_sess = context_.piiSendSession(thread_id);
+    int rc = pii_sess
+        ? pii_ibv_post_send(pii_sess, qp_list_[qp_index], wr_list.data(), &bad_wr)
+        : ibv_post_send(qp_list_[qp_index], wr_list.data(), &bad_wr);
     if (rc) {
         PLOG(ERROR) << "Failed to ibv_post_send";
         while (bad_wr) {

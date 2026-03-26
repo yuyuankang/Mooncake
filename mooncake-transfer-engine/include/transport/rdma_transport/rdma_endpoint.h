@@ -108,7 +108,8 @@ class RdmaEndPoint {
     // Submitted tasks (success/failed) are removed in slice_list
     // Failed tasks (which must be submitted) are inserted in failed_slice_list
     int submitPostSend(std::vector<Transport::Slice *> &slice_list,
-                       std::vector<Transport::Slice *> &failed_slice_list);
+                       std::vector<Transport::Slice *> &failed_slice_list,
+                       int thread_id = 0);
 
     // Get the number of QPs in this endpoint
     size_t getQPNumber() const;

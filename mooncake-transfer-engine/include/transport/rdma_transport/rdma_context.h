@@ -27,10 +27,12 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "common.h"
 #include "rdma_transport.h"
 #include "transport/transport.h"
+#include "pii/pii_runtime.h"
 
 namespace mooncake {
 
@@ -146,9 +148,15 @@ class RdmaContext {
 
     int cqCount() const { return cq_list_.size(); }
 
-    int poll(int num_entries, ibv_wc *wc, int cq_index = 0);
+    int poll(int num_entries, ibv_wc *wc, int cq_index = 0, int thread_id = 0);
 
     int socketId();
+
+    pii_session_rt *piiSendSession(int thread_id) const {
+        if (thread_id < (int)pii_send_sessions_.size())
+            return pii_send_sessions_[thread_id];
+        return nullptr;
+    }
 
    private:
     int openRdmaDevice(const std::string &device_name, uint8_t port,
@@ -199,6 +207,8 @@ class RdmaContext {
     std::shared_ptr<WorkerPool> worker_pool_;
 
     volatile bool active_;
+
+    std::vector<pii_session_rt *> pii_send_sessions_;  // one per worker thread
 };
 
 }  // namespace mooncake

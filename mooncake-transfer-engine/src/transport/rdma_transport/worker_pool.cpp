@@ -257,7 +257,7 @@ void WorkerPool::performPostSend(int thread_id) {
             entry.second.clear();
             continue;
         }
-        endpoint->submitPostSend(entry.second, failed_slice_list);
+        endpoint->submitPostSend(entry.second, failed_slice_list, thread_id);
 #endif
     }
 
@@ -274,7 +274,7 @@ void WorkerPool::performPollCq(int thread_id) {
     for (int cq_index = thread_id; cq_index < context_.cqCount();
          cq_index += kTransferWorkerCount) {
         ibv_wc wc[kPollCount];
-        int nr_poll = context_.poll(kPollCount, wc, cq_index);
+        int nr_poll = context_.poll(kPollCount, wc, cq_index, thread_id);
         if (nr_poll < 0) {
             LOG(ERROR) << "Worker: Failed to poll completion queues";
             continue;

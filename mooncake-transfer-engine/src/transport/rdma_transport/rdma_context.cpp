@@ -15,6 +15,7 @@
 #include "transport/rdma_transport/rdma_context.h"
 
 #include <fcntl.h>
+#include <limits.h>
 #include <sys/epoll.h>
 
 #include <atomic>
@@ -32,6 +33,25 @@
 #include "transport/transport.h"
 
 namespace mooncake {
+
+// Derive "BB:DD.F" BDF string from an IB device name (e.g. "mlx5_2") by
+// resolving its sysfs symlink: .../0000:31:00.0 → "31:00.0"
+static std::string nicBdfFromDevice(const std::string &dev_name) {
+    std::string syspath = "/sys/class/infiniband/" + dev_name + "/device";
+    char resolved[PATH_MAX] = {};
+    if (!realpath(syspath.c_str(), resolved)) return "";
+    std::string path(resolved);
+    auto slash = path.rfind('/');
+    if (slash == std::string::npos) return "";
+    std::string entry = path.substr(slash + 1);  // e.g. "0000:31:00.0"
+    // Strip leading PCI domain if present ("0000:")
+    size_t first = entry.find(':');
+    size_t second = entry.find(':', first + 1);
+    if (second != std::string::npos)
+        return entry.substr(first + 1);  // "31:00.0"
+    return entry;
+}
+
 static int isNullGid(union ibv_gid *gid) {
     for (int i = 0; i < 16; ++i) {
         if (gid->raw[i] != 0) return 0;
@@ -140,6 +160,22 @@ int RdmaContext::construct(size_t num_cq_list, size_t num_comp_channels,
     LOG(INFO) << "RDMA device: " << context_->device->name << ", LID: " << lid_
               << ", GID: (GID_Index " << gid_index_ << ") " << gid();
 
+    int mgmt_sock = engine_.piiMgmtSock();
+    if (mgmt_sock >= 0) {
+        std::string nic_bdf = nicBdfFromDevice(device_name_);
+        if (!nic_bdf.empty()) {
+            int n_threads = globalConfig().workers_per_ctx;
+            pii_send_sessions_.resize(n_threads, nullptr);
+            for (int t = 0; t < n_threads; ++t)
+                pii_send_sessions_[t] = create_session(mgmt_sock, "", nic_bdf.c_str());
+            LOG(INFO) << "PII send sessions created for device " << device_name_
+                      << " (NIC BDF: " << nic_bdf << ", threads: " << n_threads << ")";
+        } else {
+            LOG(WARNING) << "Could not derive BDF for " << device_name_
+                         << ", PII sessions not created";
+        }
+    }
+
     return 0;
 }
 
@@ -158,6 +194,9 @@ int RdmaContext::socketId() {
 }
 
 int RdmaContext::deconstruct() {
+    for (auto *s : pii_send_sessions_) if (s) destroy_session(s);
+    pii_send_sessions_.clear();
+
     worker_pool_.reset();
 
     endpoint_store_->destroyQPs();
@@ -258,16 +297,16 @@ int RdmaContext::registerMemoryRegionInternal(void *addr, size_t length,
                                       (uintptr_t)addr, dmabuf_fd, access);
     }
 #else
-    LOG(INFO) << "Using ibv_reg_mr to register memory region for address " << addr
+    LOG(INFO) << "[New log] Using ibv_reg_mr to register memory region for address " << addr
               << ", length " << length;
     cudaPointerAttributes attrs;
     cudaError_t cudaErr = cudaPointerGetAttributes(&attrs, addr);
     if (cudaErr == cudaSuccess) {
-        LOG(INFO) << "  -> pointer type: " << attrs.type
+        LOG(INFO) << "[New log]  -> pointer type: " << attrs.type
                   << " (0=unregistered, 1=host, 2=device, 3=managed)"
                   << " deviceId=" << attrs.device;
     } else {
-        LOG(INFO) << "  -> cudaPointerGetAttributes failed: " << cudaGetErrorString(cudaErr);
+        LOG(INFO) << "[New log]  -> cudaPointerGetAttributes failed: " << cudaGetErrorString(cudaErr);
     }
     mrMeta.addr = addr;
     mrMeta.mr = ibv_reg_mr(pd_, addr, length, access);
@@ -701,8 +740,13 @@ int RdmaContext::joinNonblockingPollList(int event_fd, int data_fd) {
     return 0;
 }
 
-int RdmaContext::poll(int num_entries, ibv_wc *wc, int cq_index) {
-    int nr_poll = ibv_poll_cq(cq_list_[cq_index].native, num_entries, wc);
+int RdmaContext::poll(int num_entries, ibv_wc *wc, int cq_index, int thread_id) {
+    int nr_poll;
+    pii_session_rt *pii_sess = piiSendSession(thread_id);
+    if (pii_sess)
+        nr_poll = pii_ibv_poll_cq(cq_list_[cq_index].native, num_entries, wc);
+    else
+        nr_poll = ibv_poll_cq(cq_list_[cq_index].native, num_entries, wc);
     if (nr_poll < 0) {
         LOG(ERROR) << "Failed to poll CQ " << cq_index << " of device "
                    << device_name_;

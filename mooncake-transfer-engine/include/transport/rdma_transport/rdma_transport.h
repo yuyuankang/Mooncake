@@ -30,6 +30,7 @@
 #include "topology.h"
 #include "transfer_metadata.h"
 #include "transport/transport.h"
+#include "pii/pii_runtime.h"
 
 namespace mooncake {
 
@@ -126,9 +127,14 @@ class RdmaTransport : public Transport {
                             std::string_view hint, int &buffer_id,
                             int &device_id, int retry_cnt = 0);
 
+   public:
+    int piiMgmtSock() const { return pii_mgmt_sock_; }
+
    private:
     std::vector<std::shared_ptr<RdmaContext>> context_list_;
     std::shared_ptr<Topology> local_topology_;
+
+    int pii_mgmt_sock_ = -1;
 };
 
 using TransferRequest = Transport::TransferRequest;
